@@ -1,5 +1,5 @@
 //
-//  FlatCacheKey.swift
+//  FlatCache.swift
 //  Freetime
 //
 //  Created by Ryan Nystrom on 10/20/17.
@@ -11,6 +11,12 @@ import Foundation
 public struct FlatCacheKey: Equatable, Hashable {
     let typeName: String
     let id: String
+}
+
+public protocol FlatCacheStorage {
+	func set<T: Cachable>(value: T)
+	func get<T: Cachable>(id: FlatCacheKey) -> T?
+	func clear() throws
 }
 
 public protocol Identifiable {
@@ -41,7 +47,8 @@ public final class FlatCache {
         case clear
     }
 
-    private var storage: [FlatCacheKey: Any] = [:]
+	private let underlyingStorage: FlatCacheStorage
+//    private var storage: [FlatCacheKey: Any] = [:]
     private let queue = DispatchQueue(
         label: "com.freetime.FlatCache.queue",
         qos: .userInitiated,
@@ -50,7 +57,9 @@ public final class FlatCache {
 
     private var listeners: [FlatCacheKey: NSHashTable<AnyObject>] = [:]
 
-    public init() { }
+	public init(storage: FlatCacheStorage) {
+		self.underlyingStorage = storage
+	}
 
     public func add<T: Cachable>(listener: FlatCacheListener, value: T) {
         assert(Thread.isMainThread)
@@ -70,7 +79,8 @@ public final class FlatCache {
         assert(Thread.isMainThread)
 
         let key = value.flatCacheKey
-        storage[key] = value
+//        storage[key] = value
+		underlyingStorage.set(value: value)
 
         enumerateListeners(key: key) { listener in
             listener.flatCacheDidUpdate(cache: self, update: .item(value))
@@ -97,7 +107,7 @@ public final class FlatCache {
 
         for value in values {
             let key = value.flatCacheKey
-            storage[key] = value
+            underlyingStorage.set(value: value)
 
             enumerateListeners(key: key, block: { listener in
                 let hash = ObjectIdentifier(listener).hashValue
@@ -125,13 +135,13 @@ public final class FlatCache {
         assert(Thread.isMainThread)
 
         let key = FlatCacheKey(typeName: T.typeName, id: id)
-        return storage[key] as? T
+        return underlyingStorage.get(id: key)
     }
 
-    public func clear() {
+	public func clear() throws {
         assert(Thread.isMainThread)
         
-        storage = [:]
+        try underlyingStorage.clear()
 
         for key in listeners.keys {
             enumerateListeners(key: key) { listener in
