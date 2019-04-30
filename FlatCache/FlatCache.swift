@@ -9,13 +9,13 @@
 import Foundation
 
 public struct FlatCacheKey: Equatable, Hashable {
-    let typeName: String
-    let id: String
+    public let typeName: String
+    public let id: String
 }
 
 public protocol FlatCacheStorage {
-	func set<T: Cachable>(value: T)
-	func get<T: Cachable>(id: FlatCacheKey) -> T?
+	func set<T: Cachable>(value: T) throws
+	func get<T: Cachable>(key: FlatCacheKey) -> T?
 	func clear() throws
 }
 
@@ -23,9 +23,14 @@ public protocol Identifiable {
     var id: String { get }
 }
 
-public protocol Cachable: Identifiable { }
+public protocol DataConvertible {
+	func toData() throws -> Data
+	static func create(from data: Data) throws -> Self
+}
 
-private extension Cachable {
+public protocol Cachable: Identifiable & DataConvertible { }
+
+public extension Cachable {
     static var typeName: String {
         return String(describing: self)
     }
@@ -75,12 +80,12 @@ public final class FlatCache {
         listeners[key] = table
     }
 
-    public func set<T: Cachable>(value: T) {
+    public func set<T: Cachable>(value: T) throws {
         assert(Thread.isMainThread)
 
         let key = value.flatCacheKey
 //        storage[key] = value
-		underlyingStorage.set(value: value)
+		try underlyingStorage.set(value: value)
 
         enumerateListeners(key: key) { listener in
             listener.flatCacheDidUpdate(cache: self, update: .item(value))
@@ -99,7 +104,7 @@ public final class FlatCache {
         }
     }
 
-    public func set<T: Cachable>(values: [T]) {
+    public func set<T: Cachable>(values: [T]) throws {
         assert(Thread.isMainThread)
 
         var listenerHashToValuesMap = [Int: [T]]()
@@ -107,7 +112,7 @@ public final class FlatCache {
 
         for value in values {
             let key = value.flatCacheKey
-            underlyingStorage.set(value: value)
+            try underlyingStorage.set(value: value)
 
             enumerateListeners(key: key, block: { listener in
                 let hash = ObjectIdentifier(listener).hashValue
@@ -135,7 +140,7 @@ public final class FlatCache {
         assert(Thread.isMainThread)
 
         let key = FlatCacheKey(typeName: T.typeName, id: id)
-        return underlyingStorage.get(id: key)
+		return underlyingStorage.get(key: key)
     }
 
 	public func clear() throws {
